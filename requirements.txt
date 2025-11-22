@@ -8,3 +8,4 @@ beautifulsoup4
 aiohttp
 python-dotenv
 pymysql
+sqlalchemy
