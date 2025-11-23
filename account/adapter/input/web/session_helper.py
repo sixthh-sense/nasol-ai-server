@@ -1,14 +1,23 @@
+import uuid
 import json
 from fastapi import HTTPException, Cookie
 from sosial_oauth.adapter.input.web.google_oauth2_router import redis_client
 
-def get_current_user(session_id: str = Cookie(None)) -> int:
-    if not session_id:
-        raise HTTPException(status_code=401, detail="세션이 존재하지 않습니다.")
+# session_id가 없다면 (비 로그인 유저) 
+# GUEST로 redis에 session 생성한다. 
+# 있다면 session_id 반환
+def get_current_user(session_id: str = Cookie(None)) -> str:
 
-    redis_key = f"session:{session_id}"
-    user_data_bytes = redis_client.get(redis_key)
+    print("[DEBUG] Session ID:", session_id)
+    if not session_id:
+        session_id = str(uuid.uuid4())
+        redis_client.set(session_id, "GUEST", ex=3600)
+        return session_id
+
+    user_data_bytes = redis_client.get(session_id)
+    print("[DEBUG] Redis value:", user_data_bytes)
     if not user_data_bytes:
+        print("[DEBUG] Redis value is None")
         raise HTTPException(status_code=401, detail="세션이 유효하지 않습니다.")
 
     # bytes -> str -> dict
@@ -17,10 +26,6 @@ def get_current_user(session_id: str = Cookie(None)) -> int:
     else:
         user_data_str = str(user_data_bytes)
 
-    try:
-        user_data = json.loads(user_data_str)
-        user_id = int(user_data["user_id"])
-    except (KeyError, ValueError, json.JSONDecodeError):
-        raise HTTPException(status_code=401, detail="세션 데이터가 올바르지 않습니다.")
+    print("[DEBUG] User Data String:", user_data_str)
 
-    return user_id
+    return session_id
