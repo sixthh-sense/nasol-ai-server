@@ -52,9 +52,9 @@ class GoogleOAuth2UseCase:
 
     async def _create_or_update_account(self, user_profile: dict, session_id: str) -> None:
         # 사용자 프로필 정보를 기반으로 계정을 생성하거나 업데이트
-        sso_id = user_profile.get("sub")
+        sso_id = user_profile.get("sub") or user_profile.get("id")
         if not sso_id:
-            raise ValueError("User profile does not contain 'sub' field")
+            raise ValueError("User profile does not contain 'sub' or 'id' field")
 
         existing_account = account_usecase.get_account_by_oauth_id("GOOGLE", sso_id)
 
