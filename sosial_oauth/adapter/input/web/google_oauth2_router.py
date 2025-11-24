@@ -61,7 +61,7 @@ async def process_google_redirect(
     print(r.status_code, r.text)
 
     # Redis에 session 저장 (1시간 TTL)
-    redis_client.set(
+    redis_client.hset(
         session_id,
         "USER_TOKEN",
         access_token.access_token,
