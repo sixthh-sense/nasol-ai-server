@@ -13,6 +13,8 @@ class Account:
         self.active_status = active_status
         self.role_id = role_id
         self.automatic_analysis_cycle = 0
+        self.target_period = 0
+        self.target_amount = 0
         self.created_at: datetime = datetime.utcnow()
         self.updated_at: datetime = datetime.utcnow()
 

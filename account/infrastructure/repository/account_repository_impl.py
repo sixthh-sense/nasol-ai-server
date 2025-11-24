@@ -39,6 +39,8 @@ class AccountRepositoryImpl(AccountRepositoryPort):
             active_status=account.active_status,
             role_id=account.role_id,
             automatic_analysis_cycle=account.automatic_analysis_cycle,
+            target_period=account.target_period,
+            target_amount=account.target_amount
         )
 
         self.db.add(orm_account)
