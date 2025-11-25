@@ -80,11 +80,15 @@ class GoogleOAuth2Service:
             raise Exception(f"Google OAuth token request failed with status {resp.status_code}: {resp.text}")
         except RequestException as e:
             raise Exception(f"Unexpected error during Google OAuth token request: {str(e)}")
+        except Exception as e:
+            raise Exception(f"Unexpected error during Google OAuth token request: {str(e)}")
         
         try:
             token_data = resp.json()
         except ValueError as e:
             raise Exception(f"Invalid JSON response from Google OAuth token endpoint: {str(e)}")
+        except Exception as e:
+            raise Exception(f"Unexpected error parsing Google OAuth token response: {str(e)}")
         
         # 필수 필드 검증
         access_token = token_data.get("access_token")
@@ -118,10 +122,48 @@ class GoogleOAuth2Service:
             raise Exception(f"Google userinfo request failed with status {resp.status_code}: {resp.text}")
         except RequestException as e:
             raise Exception(f"Unexpected error during Google userinfo request: {str(e)}")
+        except Exception as e:
+            raise Exception(f"Unexpected error during Google userinfo request: {str(e)}")
 
         try:
             user_profile = resp.json()
         except ValueError as e:
             raise Exception(f"Invalid JSON response from Google userinfo endpoint: {str(e)}")
+        except Exception as e:
+            raise Exception(f"Unexpected error parsing Google userinfo response: {str(e)}")
 
         return user_profile
+
+    @staticmethod
+    def revoke_token(access_token: str) -> bool:
+        # Google 액세스 토큰을 revoke (회원탈퇴 시 사용)
+        if not access_token:
+            raise ValueError("Access token is required to revoke")
+
+        revoke_url = "https://oauth2.googleapis.com/revoke"
+
+        try:
+            resp = requests.post(
+                revoke_url,
+                params={"token": access_token},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=10
+            )
+            resp.raise_for_status()
+            print(f"[DEBUG] Google token revoked successfully: {resp.status_code}")
+            return True
+        except Timeout:
+            print("[ERROR] Request to Google token revoke endpoint timed out")
+            raise Exception("Request to Google token revoke endpoint timed out")
+        except RequestsConnectionError:
+            print("[ERROR] Failed to connect to Google token revoke endpoint")
+            raise Exception("Failed to connect to Google token revoke endpoint")
+        except requests.HTTPError:
+            print(f"[ERROR] Google token revoke failed with status {resp.status_code}: {resp.text}")
+            raise Exception(f"Google token revoke failed with status {resp.status_code}: {resp.text}")
+        except RequestException as e:
+            print(f"[ERROR] Unexpected error during Google token revoke: {str(e)}")
+            raise Exception(f"Unexpected error during Google token revoke: {str(e)}")
+        except Exception as e:
+            print(f"[ERROR] Unexpected non-request error during Google token revoke: {str(e)}")
+            raise Exception(f"Unexpected error during Google token revoke: {str(e)}")
