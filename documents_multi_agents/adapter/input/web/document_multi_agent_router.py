@@ -204,7 +204,6 @@ async def analyze_document(session_id: str = Depends(get_current_user)):
 async def analyze_document(session_id: str = Depends(get_current_user)):
     try:
 
-        session_id = "afd2ebe1-9e62-4b91-859f-d38e58d6f833"
         content = redis_client.hgetall(session_id)
         data_str = ", ".join(
             f"{k.split(':', 1)[-1]}: {v}"
