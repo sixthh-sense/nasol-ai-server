@@ -2,7 +2,7 @@ import uuid
 import httpx
 
 from fastapi import APIRouter, Request, Cookie
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 
 from config.redis_config import get_redis
 from sosial_oauth.application.usecase.google_oauth2_usecase import GoogleOAuth2UseCase
@@ -27,7 +27,9 @@ async def logout_to_google(request: Request, session_id: str | None = Cookie(Non
 
     if not session_id:
         print("[DEBUG] No session_id received. Returning logged_in: False")
-        return {"logged_in": False}
+        response = JSONResponse({"logged_in": False})
+        response.delete_cookie(key="session_id")
+        return response
 
     exists = redis_client.exists(session_id)
     print("[DEBUG] Redis has session_id?", exists)
@@ -37,7 +39,12 @@ async def logout_to_google(request: Request, session_id: str | None = Cookie(Non
         print("[DEBUG] Redis session_id deleted:", redis_client.exists(session_id))
 
     print("[DEBUG] TEST : ", redis_client.exists(session_id))
-    return {"logged_out": bool(exists)}
+
+    # 쿠키 삭제와 함께 응답 반환
+    response = JSONResponse({"logged_out": bool(exists)})
+    response.delete_cookie(key="session_id")
+    print("[DEBUG] Cookie deleted from response")
+    return response
 
 @authentication_router.get("/google/redirect")
 async def process_google_redirect(
