@@ -28,16 +28,11 @@ def get_account_by_oauth_id(oauth_type: str, oauth_id: str):
         role_id=account.role_id
     )
 
-@account_router.put("/me")
-def update_account(session_id: str = Depends(get_current_user)):
-    return usecase.update_account(session_id)
-
 @account_router.put("/{session_id}", response_model=AccountResponse)
-def update_account(
+async def update_account(
     update_req: UpdateAccountRequest,
     session_id: str,
 ):
-    
     # 기존 계정 조회 (세션 ID로)
     existing_account = usecase.get_account_by_session_id(session_id)
     if not existing_account:
@@ -55,8 +50,7 @@ def update_account(
         target_period=update_req.target_period if update_req and update_req.target_period is not None else getattr(existing_account, "target_period", None),
         target_amount=update_req.target_amount if update_req and update_req.target_amount is not None else getattr(existing_account, "target_amount", None),
     )
-
-    usecase.update_account(updated_account)
+    await usecase.update_account(updated_account)
 
     updated_account = usecase.get_account_by_session_id(session_id)
 

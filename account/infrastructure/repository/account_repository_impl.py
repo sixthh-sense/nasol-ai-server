@@ -9,6 +9,7 @@ from sqlalchemy import and_
 
 class AccountRepositoryImpl(AccountRepositoryPort):
     __instance = None
+    
 
     def __new__(cls, *args, **kwargs):
         if cls.__instance is None:
@@ -58,10 +59,7 @@ class AccountRepositoryImpl(AccountRepositoryPort):
             raise Exception("Account not found for update")
 
         # 기존 ORM 객체의 속성을 도메인 객체 값으로 덮어쓰기
-        orm_account.oauth_id = account.oauth_id
-        orm_account.oauth_type = account.oauth_type
         orm_account.nickname = account.nickname
-        orm_account.name = account.name
         orm_account.profile_image = account.profile_image
         orm_account.email = account.email
         orm_account.phone_number = account.phone_number
@@ -71,6 +69,7 @@ class AccountRepositoryImpl(AccountRepositoryPort):
         orm_account.target_period = account.target_period
         orm_account.target_amount = account.target_amount
 
+        self.db.add(orm_account)
         self.db.commit()
         self.db.refresh(orm_account)
 
@@ -100,7 +99,9 @@ class AccountRepositoryImpl(AccountRepositoryPort):
         return None
 
     def get_account_by_session_id(self, session_id: str) -> Optional[Account]:
+        
         orm_account = self.db.query(AccountORM).filter(AccountORM.session_id == session_id).first()
+        
         if orm_account:
             account = Account(
                 session_id=orm_account.session_id,

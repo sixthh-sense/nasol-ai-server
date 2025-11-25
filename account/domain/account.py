@@ -18,7 +18,8 @@ class Account:
         self.created_at: datetime = datetime.utcnow()
         self.updated_at: datetime = datetime.utcnow()
 
-    def update(self, nickname: str, profile_image:str, email:str, phone_number:str, active_status:str, role_id:str, automatic_analysis_cycle:int, target_period: int, target_amount: int):
+    def update(self, session_id: str, nickname: str, profile_image:str, email:str, phone_number:str, active_status:str, role_id:str, automatic_analysis_cycle:int, target_period: int, target_amount: int):
+        self.session_id = session_id
         self.nickname = nickname
         self.profile_image = profile_image
         self.email = email

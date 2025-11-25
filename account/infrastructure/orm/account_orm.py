@@ -37,4 +37,4 @@ class AccountORM(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def __repr__(self):
-        return f"<AccountORM id={self.user_uuid} email={self.email} oauth_type={self.oauth_type} nickname={self.nickname}>"
+        return f"<AccountORM id={self.session_id} email={self.email} oauth_type={self.oauth_type} nickname={self.nickname}>"
