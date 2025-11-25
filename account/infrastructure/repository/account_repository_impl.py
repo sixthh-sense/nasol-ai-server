@@ -50,6 +50,33 @@ class AccountRepositoryImpl(AccountRepositoryPort):
         account.created_at = orm_account.created_at
         account.updated_at = orm_account.updated_at
         return account
+    
+    async def update(self, account: Account) -> Account:
+        # 기존 레코드 조회 (예: session_id 기준)
+        orm_account = self.db.query(AccountORM).filter_by(session_id=account.session_id).first()
+        if orm_account is None:
+            raise Exception("Account not found for update")
+
+        # 기존 ORM 객체의 속성을 도메인 객체 값으로 덮어쓰기
+        orm_account.oauth_id = account.oauth_id
+        orm_account.oauth_type = account.oauth_type
+        orm_account.nickname = account.nickname
+        orm_account.name = account.name
+        orm_account.profile_image = account.profile_image
+        orm_account.email = account.email
+        orm_account.phone_number = account.phone_number
+        orm_account.active_status = account.active_status
+        orm_account.role_id = account.role_id
+        orm_account.automatic_analysis_cycle = account.automatic_analysis_cycle
+        orm_account.target_period = account.target_period
+        orm_account.target_amount = account.target_amount
+
+        self.db.commit()
+        self.db.refresh(orm_account)
+
+        account.created_at = orm_account.created_at
+        account.updated_at = orm_account.updated_at
+        return account
 
     def get_account_by_oauth_id(self, oauth_type: str, user_oauth_id: str) -> Optional[Account]:
         orm_account = self.db.query(AccountORM).filter(AccountORM.oauth_type == oauth_type,
