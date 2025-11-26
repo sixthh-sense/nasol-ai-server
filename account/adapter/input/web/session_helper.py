@@ -8,7 +8,9 @@ from sosial_oauth.adapter.input.web.google_oauth2_router import redis_client
 # 있다면 session_id 반환
 def get_current_user(session_id: str = Cookie(None)) -> str:
 
-    print("[DEBUG] Session ID:", session_id)
+    print("[DEBUG] Session ID from cookie:", session_id)
+    
+    # 1. 쿠키에 session_id가 없는 경우 → 새로 생성
     if not session_id:
         session_id = str(uuid.uuid4())
         redis_client.hset(
@@ -17,20 +19,27 @@ def get_current_user(session_id: str = Cookie(None)) -> str:
             "GUEST"
         )
         redis_client.expire(session_id, 24 * 60 * 60)
+        print(f"[DEBUG] Created new session_id: {session_id}")
         return session_id
 
+    # 2. 쿠키에 session_id가 있는 경우 → Redis 확인
     user_data_bytes = redis_client.hgetall(session_id)
-    print("[DEBUG] Redis value:", user_data_bytes)
+    print("[DEBUG] Redis data for session_id:", user_data_bytes)
+    
+    # 3. Redis에 데이터가 없는 경우 (만료되었거나 존재하지 않음)
     if not user_data_bytes:
-        print("[DEBUG] Redis value is None")
-        raise HTTPException(status_code=401, detail="세션이 유효하지 않습니다.")
+        print(f"[DEBUG] Session expired or not found, creating new one")
+        # 에러 대신 새로운 session_id 생성
+        new_session_id = str(uuid.uuid4())
+        redis_client.hset(
+            new_session_id,
+            "USER_TOKEN",
+            "GUEST"
+        )
+        redis_client.expire(new_session_id, 24 * 60 * 60)
+        print(f"[DEBUG] Created new session_id: {new_session_id}")
+        return new_session_id
 
-    # bytes -> str -> dict
-    if isinstance(user_data_bytes, bytes):
-        user_data_str = user_data_bytes.decode("utf-8")
-    else:
-        user_data_str = str(user_data_bytes)
-
-    print("[DEBUG] User Data String:", user_data_str)
-
+    # 4. Redis에 데이터가 있는 경우 → 기존 session_id 사용
+    print(f"[DEBUG] Using existing session_id: {session_id}")
     return session_id

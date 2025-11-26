@@ -30,7 +30,9 @@ app.add_middleware(
 app.include_router(account_router, prefix="/account")
 app.include_router(authentication_router, prefix="/authentication")
 app.include_router(documents_multi_agents_router, prefix="/documents-multi-agents")
+app.include_router(documents_multi_agents_router, prefix="/flow")  # 프론트엔드 호환용
 app.include_router(kftc_router, prefix="/kftc")
+
 # 앱 실행
 if __name__ == "__main__":
     import uvicorn
