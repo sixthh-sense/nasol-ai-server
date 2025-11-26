@@ -20,7 +20,6 @@ def get_current_user(session_id: str = Cookie(None)) -> str:
         return session_id
 
     user_data_bytes = redis_client.hgetall(session_id)
-    print("[DEBUG] Redis value:", user_data_bytes)
     if not user_data_bytes:
         print("[DEBUG] Redis value is None")
         raise HTTPException(status_code=401, detail="세션이 유효하지 않습니다.")
@@ -30,7 +29,5 @@ def get_current_user(session_id: str = Cookie(None)) -> str:
         user_data_str = user_data_bytes.decode("utf-8")
     else:
         user_data_str = str(user_data_bytes)
-
-    print("[DEBUG] User Data String:", user_data_str)
 
     return session_id

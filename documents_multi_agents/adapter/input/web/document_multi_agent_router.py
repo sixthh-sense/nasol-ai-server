@@ -85,8 +85,9 @@ async def qa_on_document(document: str, question: str) -> str:
 규칙:
 - 추론하지 말고 문서 내에서만 답을 찾아라.
 - 없으면 "문서에 해당 정보 없음"이라고 답해라.
+- 문서 내에 있는 모든 정보를 찾아라.
 """
-    return (await ask_gpt(prompt, max_tokens=300)).strip()
+    return (await ask_gpt(prompt, max_tokens=2500)).strip()
 
 
 # -----------------------
@@ -156,7 +157,6 @@ async def analyze_document(file: UploadFile, type_of_doc: str = Form(...), sessi
 
         pattern = re.compile(r'([가-힣\w\s]+)\s*:\s*([\d,]+)')
 
-        print(session_id)
         try:
 
             for match in pattern.finditer(answer):
