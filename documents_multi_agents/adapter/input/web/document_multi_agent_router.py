@@ -9,6 +9,7 @@ from typing import List, Dict
 
 from starlette import status
 
+from config.crypto import Crypto
 from config.redis_config import get_redis
 from account.adapter.input.web.session_helper import get_current_user
 from account.adapter.input.web.request.insert_income_request import InsertIncomeRequest
@@ -16,7 +17,7 @@ from account.adapter.input.web.request.insert_income_request import InsertIncome
 documents_multi_agents_router = APIRouter(tags=["documents_multi_agents_router"])
 redis_client = get_redis()
 client = OpenAI()
-
+crypto = Crypto.get_instance()
 
 # -----------------------
 # PDF 텍스트 추출
@@ -163,8 +164,8 @@ async def analyze_document(file: UploadFile, type_of_doc: str = Form(...), sessi
                 # 쉼표 제거하고 Redis에 저장
                 redis_client.hset(
                     session_id,
-                    f"{type_of_doc}:{field.strip()}",
-                    value.replace(",", "").strip()
+                    crypto.enc_data(f"{type_of_doc}:{field.strip()}"),
+                    crypto.enc_data(value.replace(",", "").strip())
                 )
         except Exception as e:
             print("[ERROR] Failed to save to Redis:", str(e))
@@ -184,14 +185,27 @@ async def analyze_document(session_id: str = Depends(get_current_user)):
     try:
 
         content = redis_client.hgetall(session_id)
-        data_str = ", ".join(
-            f"{k.split(':', 1)[-1]}: {v}"
-            for k, v in content.items()
-            if k != "USER_TOKEN"
-        )
+        pairs = []
+        for k_bytes, v_bytes in content.items():
+            try:
+                if k_bytes == "USER_TOKEN":
+                    continue
+
+                key_plain = crypto.dec_data(k_bytes)
+                val_plain = crypto.dec_data(v_bytes)
+
+                # key_plain은 "type:field" 형태 — 원하는 대로 처리
+                _, field_name = key_plain.split(':', 1)
+                pairs.append(f"{field_name}: {val_plain}")
+
+            except ValueError as e:
+                # 복호화 실패 시 로깅/무시
+                continue
+
+        data_str = ", ".join(pairs)
 
         answer = await assets_on_document(data_str,
-                                      "현재 내 원천징수영수증 자료야. 이 자료를 토대로 앞으로의 내 미래 자산에 대한 재무 컨설팅을 듣고 싶어. "
+                                      "현재 내 소득/지출 자료야. 이 자료를 토대로 앞으로의 내 미래 자산에 대한 재무 컨설팅을 듣고 싶어. "
                                       "어떤 방식으로 자산을 분배하면 좋을지, 세액을 줄이는 방법은 있을지. 현재의 소득수준이 10%증가했을 때, 20% 증가했을 때를 대비한 미래 예측 시뮬레이션도 있으면 좋겠어. "
                                       "참고 자료는 한국의 비슷한 소득 수준을 가진 사람들에 대한 재무 데이터를 통해서 진행해줘")
 
@@ -207,11 +221,24 @@ async def analyze_document(session_id: str = Depends(get_current_user)):
     try:
 
         content = redis_client.hgetall(session_id)
-        data_str = ", ".join(
-            f"{k.split(':', 1)[-1]}: {v}"
-            for k, v in content.items()
-            if k != "USER_TOKEN"
-        )
+        pairs = []
+        for k_bytes, v_bytes in content.items():
+            try:
+                if k_bytes == "USER_TOKEN":
+                    continue
+
+                key_plain = crypto.dec_data(k_bytes)
+                val_plain = crypto.dec_data(v_bytes)
+
+                # key_plain은 "type:field" 형태 — 원하는 대로 처리
+                _, field_name = key_plain.split(':', 1)
+                pairs.append(f"{field_name}: {val_plain}")
+
+            except ValueError as e:
+                # 복호화 실패 시 로깅/무시
+                continue
+
+        data_str = ", ".join(pairs)
 
         answer = await tax_on_document(data_str,
                                       "주어진 문서 본문을 바탕으로 내가 올린 자료 중 한국의 연말정산 소득공제 항목 중 받을 수 있는 혜택이 남아있다면 그 공제 가능 금액이 큰 순서대로 나열해줘. "

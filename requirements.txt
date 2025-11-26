@@ -13,3 +13,4 @@ torchvision
 python-multipart
 pypdf
 cryptography
+pycryptodome
