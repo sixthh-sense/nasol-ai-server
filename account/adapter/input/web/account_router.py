@@ -8,10 +8,12 @@ from account.application.usecase.account_usecase import AccountUseCase
 from account.infrastructure.orm.account_orm import OAuthProvider
 from config.redis_config import get_redis
 from sosial_oauth.infrastructure.service.google_oauth2_service import GoogleOAuth2Service
+from util.log.log import Log
 
 account_router = APIRouter()
 usecase = AccountUseCase().get_instance()
 redis_client = get_redis()
+logger = Log.get_logger()
 
 @account_router.get("/{oauth_type}/{oauth_id}", response_model=AccountResponse)
 def get_account_by_oauth_id(oauth_type: str, oauth_id: str):
@@ -39,7 +41,6 @@ async def update_account(
     session_id: str,
 ):
 
-    print(update_req)
     # 기존 계정 조회 (세션 ID로)
     existing_account = usecase.get_account_by_session_id(session_id)
     if not existing_account:
@@ -86,36 +87,35 @@ def delete_account_by_oauth_id(oauth_type: str, oauth_id: str):
 @account_router.get("/me")
 def get_account_by_session_id(session_id: str = Depends(get_current_user)):
 
-    print("[DEBUG] IN ACCOUNT/ME : " , session_id)
     return usecase.get_account_by_session_id(session_id)
 
 @account_router.post("/departure")
 async def departure(request: Request, session_id: str | None = Cookie(None)):
-    print("[DEBUG] Departure (회원탈퇴) called")
-    print("[DEBUG] Request headers:", request.headers)
+    logger.debug("Departure called")
+    logger.debug("Request headers:", request.headers)
 
     if not session_id:
-        print("[DEBUG] No session_id received. Returning error")
+        logger.debug("No session_id received. Returning error")
         response = JSONResponse({"success": False, "message": "No session found"}, status_code=400)
         response.delete_cookie(key="session_id")
         return response
 
     # Redis 세션 확인
     exists = redis_client.exists(session_id)
-    print("[DEBUG] Redis has session_id?", exists)
+    logger.debug("Redis session exists:", exists)
 
     if not exists:
-        print("[DEBUG] Session not found in Redis")
+        logger.debug("Session not found in Redis")
         response = JSONResponse({"success": False, "message": "Session not found"}, status_code=400)
         response.delete_cookie(key="session_id")
         return response
 
     # session_id로 계정 조회
     account = usecase.get_account_by_session_id(session_id)
-    print("[DEBUG] Account found:", account)
+    logger.debug("Account found")
 
     if not account:
-        print("[DEBUG] Account not found for session_id")
+        logger.debug("Account not found for session_id:", session_id)
         # 계정이 없어도 세션과 쿠키는 삭제
         redis_client.delete(session_id)
         response = JSONResponse({"success": False, "message": "Account not found"}, status_code=404)
@@ -123,50 +123,50 @@ async def departure(request: Request, session_id: str | None = Cookie(None)):
         return response
 
     # Google 계정인 경우에만 token revoke 실행
-    print(f"[DEBUG] Account oauth_type: '{account.oauth_type}'")
-    print(f"[DEBUG] Checking if oauth_type == OAuthProvider.GOOGLE: {account.oauth_type == OAuthProvider.GOOGLE}")
+    logger.debug(f"Account oauth_type: '{account.oauth_type}'")
+    logger.debug(f"OAuthProvider.GOOGLE: '{OAuthProvider.GOOGLE}'")
 
     if account.oauth_type == OAuthProvider.GOOGLE:
-        print("[DEBUG] Google account detected, attempting token revoke")
+        logger.debug("Google account detected, attempting token revoke")
         access_token = redis_client.hget(session_id, "USER_TOKEN")
-        print(f"[DEBUG] Access token from Redis (type: {type(access_token)}): {access_token}")
+        logger.debug(f"[DEBUG] Access token from Redis (type: {type(access_token)})")
 
         if access_token:
             try:
                 if isinstance(access_token, bytes):
                     access_token = access_token.decode("utf-8")
-                    print(f"[DEBUG] Decoded access token: {access_token[:20]}...")
+                    logger.debug("[DEBUG] Decoded access token")
 
                 # GUEST 토큰이 아닌 경우에만 revoke 시도
                 if access_token != "GUEST":
-                    print("[DEBUG] Calling GoogleOAuth2Service.revoke_token()...")
+                    logger.debug("Calling GoogleOAuth2Service.revoke_token()...")
                     result = GoogleOAuth2Service.revoke_token(access_token)
-                    print(f"[DEBUG] Google token revoke result: {result}")
-                    print("[DEBUG] Google token revoked successfully")
+                    logger.debug(f"Google token revoke result: {result}")
+                    logger.debug("Google token revoked successfully")
+
                 else:
-                    print("[DEBUG] Skipping token revoke for GUEST user")
+                    logger.debug("Skipping token revoke for GUEST user")
             except Exception as e:
                 # Token revoke 실패해도 계속 진행 (이미 만료됐을 수 있음)
-                print(f"[WARNING] Failed to revoke Google token: {str(e)}")
                 import traceback
-                print(f"[WARNING] Traceback: {traceback.format_exc()}")
+                logger.debug(f"[ERROR] Failed to revoke Google token: {str(e)}")
+                logger.debug(f"[ERROR] Traceback: {traceback.format_exc()}")
         else:
-            print("[DEBUG] No access token found in Redis for Google account")
-            print(f"[DEBUG] All Redis keys for session_id: {redis_client.hkeys(session_id)}")
+            logger.debug("No access token found in Redis for Google account")
+            logger.debug(f"All Redis keys for session_id: {redis_client.hkeys(session_id)}")
     else:
-        print(f"[DEBUG] Non-Google account ({account.oauth_type}), skipping token revoke")
+        logger.debug("Non-Google account detected, skipping token revoke")
 
     # 계정 삭제 (향후 table이 account 외에 더 늘어날 경우 이쪽에 테이블 삭제 로직 추가)
     deleted = usecase.delete_account_by_oauth_id(account.oauth_type, account.oauth_id)
-    print("[DEBUG] Account deleted:", deleted)
+    logger.debug("Account deleted:", deleted)
 
     # Redis 세션 삭제
     delete_result = redis_client.delete(session_id)
-    print("[DEBUG] Redis delete result:", delete_result)
-    print("[DEBUG] Redis session exists after delete?", redis_client.exists(session_id))
-
+    logger.debug("Redis delete result:", delete_result)
+    logger.debug("Redis session exists after delete?", redis_client.exists(session_id))
     # 쿠키 삭제와 함께 응답 반환
     response = JSONResponse({"success": True, "message": "Account deleted successfully"})
     response.delete_cookie(key="session_id")
-    print("[DEBUG] Cookie deleted from response")
+    logger.debug("Cookie deleted from response")
     return response

@@ -3,7 +3,9 @@ from typing import Optional
 from account.domain.account import Account
 from account.infrastructure.repository.account_repository_impl import AccountRepositoryImpl
 from account.adapter.input.web.request.update_account_request import UpdateAccountRequest
+from util.log.log import Log
 
+logger = Log.get_logger()
 class AccountUseCase:
     __instance = None
 
@@ -32,11 +34,11 @@ class AccountUseCase:
         target_period = updated_account.target_period
         target_amount = updated_account.target_amount
         
-        print(f"print ***************** session_id={session_id}, nickname={nickname}")
+        logger.info(f"nickname={nickname}")
         
         # 기존 계정 조회
         existing_account = self.account_repo.get_account_by_session_id(session_id)
-        print(f"existing_account={existing_account}")
+        logger.info(f"existing_account={existing_account}")
         
         if existing_account is None:
             raise Exception("Account not found")

@@ -11,11 +11,15 @@ from config.redis_config import get_redis
 from account.adapter.input.web.session_helper import get_current_user
 
 from documents_multi_agents.adapter.input.web.request.insert_income_request import InsertDocumentRequest
+from util.log.log import Log
 
+log_util = Log()
+logger = Log.get_logger()
 documents_multi_agents_router = APIRouter(tags=["documents_multi_agents_router"])
 redis_client = get_redis()
 client = OpenAI()
 crypto = Crypto.get_instance()
+
 
 # -----------------------
 # PDF 텍스트 추출
@@ -53,6 +57,7 @@ async def ask_gpt(prompt: str, max_tokens=500):
 # -----------------------
 # QA 에이전트 (문서 기반)
 # -----------------------
+@log_util.logging_decorator
 async def qa_on_document(document: str, question: str, role: str) -> str:
     prompt = f"""
 다음은 문서 자료이다. 이 문서 내의 정보만 사용하여 질문에 답해라.
@@ -69,15 +74,17 @@ async def qa_on_document(document: str, question: str, role: str) -> str:
 """
     return (await ask_gpt(prompt, max_tokens=2500)).strip()
 
+
 # -----------------------
 # API 엔드포인트
 # -----------------------
 @documents_multi_agents_router.post("/analyze")
+@log_util.logging_decorator
 async def analyze_document(
-    response: Response,
-    file: UploadFile, 
-    type_of_doc: str = Form(...), 
-    session_id: str = Depends(get_current_user)
+        response: Response,
+        file: UploadFile,
+        type_of_doc: str = Form(...),
+        session_id: str = Depends(get_current_user)
 ):
     try:
         # 쿠키에 session_id 명시적으로 설정
@@ -88,7 +95,7 @@ async def analyze_document(
             httponly=True,
             samesite="lax"
         )
-        
+
         content = await file.read()
         if not content:
             raise HTTPException(400, "Empty file upload")
@@ -192,30 +199,26 @@ async def analyze_document(
                 # 암호화된 키/값 생성
                 encrypted_key = crypto.enc_data(f"{type_of_doc}:{field_clean}")
                 encrypted_value = crypto.enc_data(value_clean)
-                
-                print(f"[DEBUG] Saving to Redis - session_id: {session_id}")
-                print(f"[DEBUG] Original key: {type_of_doc}:{field_clean}")
-                print(f"[DEBUG] Original value: {value_clean}")
-                
+
                 # Redis에 저장
                 redis_client.hset(
                     session_id,
                     encrypted_key,
                     encrypted_value
                 )
-                
+
                 # 저장 확인
                 saved_value = redis_client.hget(session_id, encrypted_key)
-                print(f"[DEBUG] Saved successfully: {saved_value is not None}")
-                
+                logger.info(f"Saved successfully: {saved_value is not None}")
+
                 # 응답용 데이터 수집
                 extracted_items[field_clean] = value_clean
-                
+
         except Exception as e:
-            print("[ERROR] Failed to save to Redis:", str(e))
+            logger.error(f"[ERROR] Failed to save to Redis: {str(e)}")
             import traceback
             traceback.print_exc()
-            
+
         redis_client.expire(session_id, 24 * 60 * 60)
         
         print(f"[DEBUG] Total extracted_items: {len(extracted_items)}")
@@ -233,9 +236,9 @@ async def analyze_document(
 
         # AI로 카테고리 분류
         from documents_multi_agents.domain.service.financial_analyzer_service import FinancialAnalyzerService
-        
+
         analyzer = FinancialAnalyzerService()
-        
+
         # type_of_doc에 따라 소득/지출 분류
         categorized_data = {}
         if "소득" in type_of_doc or "income" in type_of_doc.lower():
@@ -245,7 +248,7 @@ async def analyze_document(
         else:
             # 타입을 모를 경우 원본 데이터만 반환
             categorized_data = {"raw_items": extracted_items}
-        
+
         # 성공 응답 반환 (session_id 포함)
         return {
             "success": True,
@@ -264,6 +267,7 @@ async def analyze_document(
 # API 엔드포인트
 # -----------------------
 @documents_multi_agents_router.get("/future-assets")
+@log_util.logging_decorator
 async def analyze_document(session_id: str = Depends(get_current_user)):
     try:
         content = redis_client.hgetall(session_id)
@@ -290,20 +294,22 @@ async def analyze_document(session_id: str = Depends(get_current_user)):
                                       "현재 내 소득/지출 자료야. 이 자료를 토대로 앞으로의 내 미래 자산에 대한 재무 컨설팅을 듣고 싶어. "
                                       "어떤 방식으로 자산을 분배하면 좋을지, 세액을 줄이는 방법은 있을지. 현재의 소득수준이 10%증가했을 때, 20% 증가했을 때를 대비한 미래 예측 시뮬레이션도 있으면 좋겠어. "
                                       "참고 자료는 한국의 비슷한 소득 수준을 가진 사람들에 대한 재무 데이터를 통해서 진행해줘",
-                                       "주어진 문서 본문의 자료를 토대로 한국의 비슷한 소득수준의 재무정보를 분석하여 가이드가 될 수 있는 포토폴리오 자료를 제출하라."
-                                       "웹 검색을 사용하여 현재 소득 수준에 대한 포토폴리오 자료, 소득 수준이 10% 상승되었을 때, 20% 상승되었을 때에 대한 미래 예측 자료를 함께 제출하라."
-                                       "추가적인 질문을 요구하는 문장은 제외하라."
-                                       "-- 등으로 불필요한 줄나눔은 없게 하라."
+                                      "주어진 문서 본문의 자료를 토대로 한국의 비슷한 소득수준의 재무정보를 분석하여 가이드가 될 수 있는 포토폴리오 자료를 제출하라."
+                                      "웹 검색을 사용하여 현재 소득 수준에 대한 포토폴리오 자료, 소득 수준이 10% 상승되었을 때, 20% 상승되었을 때에 대한 미래 예측 자료를 함께 제출하라."
+                                      "추가적인 질문을 요구하는 문장은 제외하라."
+                                      "-- 등으로 불필요한 줄나눔은 없게 하라."
                                       )
 
         return answer
     except Exception as e:
         raise HTTPException(500, f"{type(e).__name__}: {str(e)}")
 
+
 # -----------------------
 # API 엔드포인트
 # -----------------------
 @documents_multi_agents_router.get("/tax-credit")
+@log_util.logging_decorator
 async def analyze_document(session_id: str = Depends(get_current_user)):
     try:
         content = redis_client.hgetall(session_id)
@@ -348,19 +354,21 @@ async def analyze_document(session_id: str = Depends(get_current_user)):
                                       "주어진 문서 본문의 항목과 내가 제시한 10가지 항목이 일치하지 않아도 유사도로 0.9 이상이라면 표기해 "
                                       "EX) 혼인 세액공제 = 결혼세액공제"
                                       "참고할 사이트는 https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?mi=6596&cntntsId=7875 국세청 공식 사이트야",
-                                       "주어진 문서 본문의 자료를 토대로 질문에 답변하라."
-                                       "추가적인 질문을 요구하는 문장은 제외하라."
-                                       "-- 등으로 불필요한 줄나눔은 없게 하라."
+                                      "주어진 문서 본문의 자료를 토대로 질문에 답변하라."
+                                      "추가적인 질문을 요구하는 문장은 제외하라."
+                                      "-- 등으로 불필요한 줄나눔은 없게 하라."
                                       )
 
         return answer
     except Exception as e:
         raise HTTPException(500, f"{type(e).__name__}: {str(e)}")
 
+
 # -----------------------
 # API 엔드포인트
 # -----------------------
 @documents_multi_agents_router.get("/deduction-expectation")
+@log_util.logging_decorator
 async def analyze_document(session_id: str = Depends(get_current_user)):
     try:
         content = redis_client.hgetall(session_id)
@@ -384,23 +392,25 @@ async def analyze_document(session_id: str = Depends(get_current_user)):
         data_str = ", ".join(pairs)
 
         answer = await qa_on_document(data_str,
-                                       "주어진 문서 본문을 활용하여 연말정산에서 받을 수 있는 총 공제 예상 금액을 산출해줘. "
-                                       "이 때 내가 받을 수 있는 총 공제 예상 금액을 먼저 산출해서 보여주고, "
-                                       "앞으로 받을 수 있는 추가적인 공제내역이 있다면 해당 항목에 대한 간결한 설명과 함께 알려줘."
-                                       "참고할 사이트는 https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?mi=6596&cntntsId=7875 국세청 공식 사이트야",
+                                      "주어진 문서 본문을 활용하여 연말정산에서 받을 수 있는 총 공제 예상 금액을 산출해줘. "
+                                      "이 때 내가 받을 수 있는 총 공제 예상 금액을 먼저 산출해서 보여주고, "
+                                      "앞으로 받을 수 있는 추가적인 공제내역이 있다면 해당 항목에 대한 간결한 설명과 함께 알려줘."
+                                      "참고할 사이트는 https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?mi=6596&cntntsId=7875 국세청 공식 사이트야",
                                       "주어진 문서 본문의 자료를 토대로 질문에 답변하라."
                                       "추가적인 질문을 요구하는 문장은 제외하라."
                                       "-- 등으로 불필요한 줄나눔은 없게 하라."
-                                       )
+                                      )
 
         return answer
     except Exception as e:
         raise HTTPException(500, f"{type(e).__name__}: {str(e)}")
 
+
 # -----------------------
 # API 엔드포인트 - 사용자 입력 폼 데이터
 # -----------------------
 @documents_multi_agents_router.post("/analyze_form")
+@log_util.logging_decorator
 async def insert_document(
         response: Response,
         request: InsertDocumentRequest,
@@ -417,7 +427,7 @@ async def insert_document(
             httponly=True,
             samesite="lax"
         )
-        
+
         # 세션 처리
         if not session_id:
             session_id = str(uuid.uuid4())
@@ -428,25 +438,21 @@ async def insert_document(
         extracted_items = {}
         for field_key, field_value in request.data.items():
             value_clean = field_value.replace(",", "").strip()
-            
+
             # 암호화된 키/값 생성
             encrypted_key = crypto.enc_data(f"{request.document_type}:{field_key}")
             encrypted_value = crypto.enc_data(value_clean)
-            
-            print(f"[DEBUG] Saving to Redis (form) - session_id: {session_id}")
-            print(f"[DEBUG] Original key: {request.document_type}:{field_key}")
-            print(f"[DEBUG] Original value: {value_clean}")
-            
+
             redis_client.hset(
                 session_id,
                 encrypted_key,
                 encrypted_value
             )
-            
+
             # 저장 확인
             saved_value = redis_client.hget(session_id, encrypted_key)
-            print(f"[DEBUG] Saved successfully: {saved_value is not None}")
-            
+            logger.debug(f"[DEBUG] Saved successfully: {saved_value is not None}")
+
             # 응답용 데이터 수집
             extracted_items[field_key] = value_clean
 
@@ -454,9 +460,9 @@ async def insert_document(
 
         # AI로 카테고리 분류
         from documents_multi_agents.domain.service.financial_analyzer_service import FinancialAnalyzerService
-        
+
         analyzer = FinancialAnalyzerService()
-        
+
         # type에 따라 소득/지출 분류
         categorized_data = {}
         if "소득" in request.document_type or "income" in request.document_type.lower():
@@ -478,21 +484,23 @@ async def insert_document(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # -----------------------
 # 디버그: Redis 데이터 확인
 # -----------------------
 @documents_multi_agents_router.get("/debug/redis-data")
+@log_util.logging_decorator
 async def debug_redis_data(session_id: str = Depends(get_current_user)):
     """Redis에 저장된 원본 데이터 확인 (디버깅용)"""
     try:
         raw_data = redis_client.hgetall(session_id)
-        
+
         result = {
             "session_id": session_id,
             "total_keys": len(raw_data),
             "keys": []
         }
-        
+
         for key_bytes, value_bytes in raw_data.items():
             try:
                 # bytes를 문자열로 변환
@@ -500,12 +508,12 @@ async def debug_redis_data(session_id: str = Depends(get_current_user)):
                     key_str = key_bytes.decode('utf-8')
                 else:
                     key_str = str(key_bytes)
-                
+
                 if isinstance(value_bytes, bytes):
                     value_str = value_bytes.decode('utf-8')
                 else:
                     value_str = str(value_bytes)
-                
+
                 # USER_TOKEN은 암호화되지 않음
                 if key_str == "USER_TOKEN":
                     result["keys"].append({
@@ -535,38 +543,38 @@ async def debug_redis_data(session_id: str = Depends(get_current_user)):
                 result["keys"].append({
                     "error": f"키 처리 실패: {str(e)}"
                 })
-        
+
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # -----------------------
 # 통합 결과 조회 (소득 + 지출)
 # -----------------------
 @documents_multi_agents_router.get("/result")
+@log_util.logging_decorator
 async def get_combined_result(session_id: str = Depends(get_current_user)):
     """
     Redis에 저장된 소득+지출 데이터를 복호화하고 카테고리별로 분류하여 반환
     시각화에 적합한 형태로 데이터 구조화
     """
     try:
-        print(f"[DEBUG] /result called with session_id: {session_id}")
-        
+        logger.debug("[DEBUG] /result called with session_id")
+
         # Redis에서 모든 데이터 가져오기
         encrypted_data = redis_client.hgetall(session_id)
-        
-        print(f"[DEBUG] Total keys in Redis: {len(encrypted_data)}")
-        
+
         if not encrypted_data:
             raise HTTPException(
                 status_code=404,
                 detail="저장된 재무 데이터가 없습니다"
             )
-        
+
         # 복호화 및 소득/지출 분리
         income_items = {}
         expense_items = {}
-        
+
         for key_bytes, value_bytes in encrypted_data.items():
             try:
                 # bytes를 문자열로 변환
@@ -574,36 +582,31 @@ async def get_combined_result(session_id: str = Depends(get_current_user)):
                     key_str = key_bytes.decode('utf-8')
                 else:
                     key_str = str(key_bytes)
-                
+
                 if isinstance(value_bytes, bytes):
                     value_str = value_bytes.decode('utf-8')
                 else:
                     value_str = str(value_bytes)
-                
+
                 # USER_TOKEN 제외
                 if key_str == "USER_TOKEN":
-                    print("[DEBUG] Skipping USER_TOKEN")
+                    logger.debug("[DEBUG] Skipping USER_TOKEN")
                     continue
-                
-                print(f"[DEBUG] Decrypting key: {key_str[:50]}...")
+
                 key_plain = crypto.dec_data(key_str)
                 value_plain = crypto.dec_data(value_str)
-                
-                print(f"[DEBUG] Decrypted: {key_plain} = {value_plain}")
-                
+
                 # "타입:필드명" 형태 파싱
                 if ":" in key_plain:
                     doc_type, field_name = key_plain.split(":", 1)
-                    
+
                     if "소득" in doc_type or "income" in doc_type.lower():
                         income_items[field_name] = value_plain
-                        print(f"[DEBUG] Added to income: {field_name} = {value_plain}")
                     elif "지출" in doc_type or "expense" in doc_type.lower():
                         expense_items[field_name] = value_plain
-                        print(f"[DEBUG] Added to expense: {field_name} = {value_plain}")
             except Exception as decrypt_error:
-                print(f"[ERROR] Decryption failed for key: {key_str[:50] if 'key_str' in locals() else 'unknown'}")
-                print(f"[ERROR] Error: {str(decrypt_error)}")
+                logger.error(f"[ERROR] Decryption failed for key: {key_str[:50] if 'key_str' in locals() else 'unknown'}")
+                logger.error(f"[ERROR] Error: {str(decrypt_error)}")
                 import traceback
                 traceback.print_exc()
                 continue
@@ -646,7 +649,7 @@ async def get_combined_result(session_id: str = Depends(get_current_user)):
         
         # AI로 카테고리 분류
         from documents_multi_agents.domain.service.financial_analyzer_service import FinancialAnalyzerService
-        
+
         analyzer = FinancialAnalyzerService()
         
         print(f"[DEBUG] Before AI categorization - income_items: {income_items}")
@@ -667,17 +670,17 @@ async def get_combined_result(session_id: str = Depends(get_current_user)):
         except (ValueError, TypeError) as e:
             print(f"[ERROR] Failed to calculate total_income: {e}")
             total_income = 0
-            
+
         try:
             total_expense = int(expense_categorized.get("총지출") or expense_categorized.get("total_expense", 0)) if (expense_categorized.get("총지출") or expense_categorized.get("total_expense")) else 0
             print(f"[DEBUG] Calculated total_expense: {total_expense}")
         except (ValueError, TypeError) as e:
             print(f"[ERROR] Failed to calculate total_expense: {e}")
             total_expense = 0
-        
+
         surplus = total_income - total_expense
         surplus_ratio = (surplus / total_income * 100) if total_income > 0 else 0
-        
+
         # 시각화용 데이터 구조
         return {
             "success": True,
@@ -691,13 +694,134 @@ async def get_combined_result(session_id: str = Depends(get_current_user)):
             "income": income_categorized,
             "expense": expense_categorized,
             "chart_data": {
-                "income_by_category": income_categorized.get("카테고리별 합계") or income_categorized.get("카테고리별합계") or income_categorized.get("total_by_category", {}),
-                "expense_by_main_category": expense_categorized.get("카테고리별 합계") or expense_categorized.get("카테고리별합계") or expense_categorized.get("total_by_main_category", {}),
+                "income_by_category": income_categorized.get("카테고리별 합계") or income_categorized.get(
+                    "카테고리별합계") or income_categorized.get("total_by_category", {}),
+                "expense_by_main_category": expense_categorized.get("카테고리별 합계") or expense_categorized.get(
+                    "카테고리별합계") or expense_categorized.get("total_by_main_category", {}),
                 "expense_detail": expense_categorized
             }
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {str(e)}")
+
+# -----------------------
+# API 엔드포인트 - 세액공제 가능 항목 체크리스트
+# -----------------------
+@documents_multi_agents_router.get("/tax-credit/checklist")
+async def tax_credit_checklist_markdown(session_id: str = Depends(get_current_user)):
+    try:
+        content = redis_client.hgetall(session_id)
+
+        if not content:
+            return "저장된 재무 데이터가 없습니다."
+
+        pairs = []
+        for k_bytes, v_bytes in content.items():
+            try:
+                if k_bytes == "USER_TOKEN":
+                    continue
+
+                key_plain = crypto.dec_data(
+                    k_bytes.decode("utf-8") if isinstance(k_bytes, bytes) else k_bytes
+                )
+                val_plain = crypto.dec_data(
+                    v_bytes.decode("utf-8") if isinstance(v_bytes, bytes) else v_bytes
+                )
+
+                # "지출:월세" → 월세
+                _, field_name = key_plain.split(":", 1)
+                pairs.append(f"{field_name}: {val_plain}")
+
+            except Exception:
+                continue
+
+        data_str = ", ".join(pairs)
+
+        tax_items_text = """
+1. 자녀 세액공제
+2. 연금계좌 세액공제
+3. 월세 세액공제
+4. 보험료 세액공제
+5. 의료비 세액공제
+6. 교육비 세액공제
+7. 기부금 세액공제
+8. 혼인 세액공제
+9. 중소기업 취업자 소득세 감면
+10. 근로소득세액공제
+"""
+
+        question = f"""
+다음은 사용자가 제출한 재무 자료입니다:
+
+{data_str}
+
+아래 10개의 세액공제 항목 각각에 대해 다음을 분석하세요.
+
+### 세액공제 항목 목록
+1. 자녀 세액공제
+2. 연금계좌 세액공제
+3. 월세 세액공제
+4. 보험료 세액공제
+5. 의료비 세액공제
+6. 교육비 세액공제
+7. 기부금 세액공제
+8. 혼인 세액공제
+9. 중소기업 취업자 소득세 감면
+10. 근로소득세액공제
+
+---
+
+# 📌 출력 형식 (아주 중요)
+
+출력은 반드시 다음 두 부분으로 이루어져야 합니다.
+
+---
+
+## ① **설명 섹션 (자연어 설명)**    
+- 3~5줄 이내  
+- "아래 표는 사용자의 재무 데이터를 기반으로 세액공제 가능 여부를 분석한 것입니다."  
+  와 같은 형태의 요약 설명  
+- 불필요한 문장 금지  
+- 사용자에게 친절하지만 간결하게 설명  
+
+---
+
+## ② **Markdown 표 형식 결과**
+
+반드시 다음 표 구조를 유지:
+
+| 항목 | 가능 여부 | 이유 |
+|------|-----------|------|
+| 항목명 | ✔️  / ❌ | 100자 이내 이유 |
+
+- "가능 여부"는 반드시 **✔️** 또는 **❌**  
+- 이유는 반드시 **100자 이내**  
+- 데이터 없는 항목은 “문서에 관련 항목 없음”처럼 명확히 표현  
+
+---
+
+# ❗ 절대 금지 규칙
+- 표 외의 불필요한 문단 추가 금지
+- 표 아래에 설명 추가 금지
+- 주관적 조언 또는 추가 질문 금지
+- 출력 형식은 반드시 “설명 → 표” 순서
+
+---
+
+위 지침을 100% 준수하여 “설명 섹션 + 마크다운 표” 두 가지를 출력하세요.
+
+"""
+
+        answer = await qa_on_document(
+            data_str,
+            question,
+            "출력은 반드시 “설명 섹션 + 마크다운 표” 형태로만 작성하라."
+        )
+
+        return answer
+
+    except Exception as e:
+        raise HTTPException(500, f"{type(e).__name__}: {str(e)}")

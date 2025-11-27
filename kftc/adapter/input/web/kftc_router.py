@@ -1,11 +1,11 @@
 from fastapi import APIRouter
 
-from datetime import datetime
-
 from kftc.infrastructure.service.kftc_service import KftcService
+from util.log.log import Log
 
 kftc_router = APIRouter()
 svc = KftcService.get_instance()
+logger = Log.get_logger()
 
 @kftc_router.get("/redirect")
 def auth_callback(code: str):
@@ -16,11 +16,11 @@ def auth_callback(code: str):
     svc.access_token = access_token
     svc.user_seq_no = user_seq_no
 
-    print("[DEBUG] token:", token_data)
+    logger.debug("Access token fetched")
 
     # 2) 사용자 정보 조회 → 계좌 목록 포함
     user_info = svc.get_user_info(access_token, user_seq_no)
-    print("[DEBUG] user_info:", user_info)
+    logger.debug("User info fetched")
 
     # 3) 계좌 목록 기반 거래내역 조회
     account_results = []
@@ -42,17 +42,16 @@ def auth_callback(code: str):
             "transactions": tx_list
         })
 
-    print("[DEBUG] account_results:", account_results)
+    logger.debug("Account transactions fetched")
 
     # 4) 카드 목록 조회
     card_list = svc.get_card_list(access_token, user_seq_no)
-    print("[DEBUG] card_list:", card_list)
+    logger.debug("Card list fetched")
 
     # 5) 카드별 승인내역 조회
     card_results = []
     for card in card_list.get("card_list", []):
         org_code = card["org_code"]
-        print(f"[DEBUG] 조회할 카드 org_code = {org_code}")
 
         approval_list = svc.get_card_transactions(
             access_token=access_token,
@@ -71,5 +70,5 @@ def auth_callback(code: str):
     return {
         "user_info": user_info,
         "accounts": account_results,
-        # "cards": card_results
+        "cards": card_results
     }

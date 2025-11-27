@@ -5,6 +5,9 @@ import requests
 
 from sosial_oauth.adapter.input.web.request.get_access_token_request import GetAccessTokenRequest
 from sosial_oauth.adapter.input.web.response.access_token import AccessToken
+from util.log.log import Log
+
+logger = Log.get_logger()
 
 
 class GoogleOAuth2Service:
@@ -37,18 +40,18 @@ class GoogleOAuth2Service:
     def get_authorization_url() -> str:
         # Google OAuth 인증 URL을 생성
         scope = "openid email profile"
-        
+
         google_auth_url = GoogleOAuth2Service._get_env_var("GOOGLE_AUTH_URL")
         client_id = GoogleOAuth2Service._get_env_var("GOOGLE_CLIENT_ID")
         redirect_uri = GoogleOAuth2Service._get_env_var("GOOGLE_REDIRECT_URI")
-        
+
         params = {
             "client_id": client_id,
             "redirect_uri": redirect_uri,
             "response_type": "code",
             "scope": scope
         }
-        
+
         query_string = urlencode(params, quote_via=quote)
         return f"{google_auth_url}?{query_string}"
 
@@ -59,7 +62,7 @@ class GoogleOAuth2Service:
         client_id = GoogleOAuth2Service._get_env_var("GOOGLE_CLIENT_ID")
         client_secret = GoogleOAuth2Service._get_env_var("GOOGLE_CLIENT_SECRET")
         redirect_uri = GoogleOAuth2Service._get_env_var("GOOGLE_REDIRECT_URI")
-        
+
         data = {
             "code": request.code,
             "client_id": client_id,
@@ -67,7 +70,7 @@ class GoogleOAuth2Service:
             "redirect_uri": redirect_uri,
             "grant_type": "authorization_code"
         }
-        
+
         try:
             resp = requests.post(google_token_url, data=data, timeout=10)
             resp.raise_for_status()
@@ -79,7 +82,7 @@ class GoogleOAuth2Service:
                 raise ValueError("Access token is missing in the response from Google OAuth")
         except Exception as e:
             raise Exception(f"Failed to get Google OAuth token: {str(e)}")
-        
+
         return AccessToken(
             access_token=access_token,
             token_type=token_data.get("token_type", "Bearer"),
@@ -120,8 +123,8 @@ class GoogleOAuth2Service:
                 timeout=10
             )
             resp.raise_for_status()
-            print(f"[DEBUG] Google token revoked successfully: {resp.status_code}")
+            logger.debug(f"Google token revoked successfully: {resp.status_code}")
             return True
         except Exception as e:
-            print(f"[ERROR] Failed to revoke Google token: {str(e)}")
+            logger.error(f"[ERROR] Failed to revoke Google token: {str(e)}")
             raise Exception(f"Failed to revoke Google token: {str(e)}")

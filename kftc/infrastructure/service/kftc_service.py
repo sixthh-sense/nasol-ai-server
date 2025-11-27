@@ -3,7 +3,9 @@ import uuid
 
 import requests
 from datetime import datetime
+from util.log.log import Log
 
+logger = Log.get_logger()
 class KftcService:
     __instance = None
 
@@ -37,7 +39,7 @@ class KftcService:
             "code": auth_code,
             "redirect_uri": KftcService._get_env_var("KFTC_REDIRECT_URI")
         }
-        print("[DEBUG] data", data)
+        logger.debug("[DEBUG] data fetched")
         resp = requests.post(url, data=data)
         return resp.json()  # access_token, refresh_token 등 포함
 

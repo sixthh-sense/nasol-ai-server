@@ -1,21 +1,25 @@
 import os
 import json
 import re
-from typing import Dict, List, Any
+from typing import Dict, Any
 from openai import OpenAI
 from dotenv import load_dotenv
 
+from util.log.log import Log
+
 load_dotenv()
+logger = Log.get_logger()
+log_util = Log()
 
 
 class FinancialAnalyzerService:
     """
     Redis에서 복호화된 재무 데이터를 AI로 분석하고 카테고리별로 분류하는 서비스
     """
-    
+
     def __init__(self):
         self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    
+
     @staticmethod
     def _fix_json_string(json_str: str) -> str:
         """
@@ -24,15 +28,15 @@ class FinancialAnalyzerService:
         # 1. 마지막 항목의 쉼표 제거
         json_str = re.sub(r',\s*}', '}', json_str)
         json_str = re.sub(r',\s*]', ']', json_str)
-        
+
         # 2. 연속된 쉼표 제거
         json_str = re.sub(r',\s*,', ',', json_str)
-        
+
         # 3. 콜론 뒤에 쉼표가 바로 오는 경우 수정
         json_str = re.sub(r':\s*,', ': null,', json_str)
-        
+
         return json_str
-    
+
     @staticmethod
     def _clean_item_names(data: Dict) -> Dict:
         """
@@ -40,20 +44,21 @@ class FinancialAnalyzerService:
         """
         if not isinstance(data, dict):
             return data
-        
+
         cleaned = {}
         for key, value in data.items():
             # 키의 언더스코어를 띄어쓰기로 변환
             clean_key = key.replace("_", " ")
-            
+
             if isinstance(value, dict):
                 # 중첩된 딕셔너리도 재귀적으로 처리
                 cleaned[clean_key] = FinancialAnalyzerService._clean_item_names(value)
             else:
                 cleaned[clean_key] = value
-        
+
         return cleaned
-        
+
+    @log_util.logging_decorator
     def categorize_financial_data(self, decrypted_data: Dict[str, str]) -> Dict[str, Any]:
         """
         복호화된 재무 데이터를 AI로 분석하여 카테고리별로 분류
@@ -67,39 +72,40 @@ class FinancialAnalyzerService:
         # 소득/지출 분리
         income_items = {}
         expense_items = {}
-        
+
         for key, value in decrypted_data.items():
             if key == "USER_TOKEN":
                 continue
-                
+
             # "타입:항목" 형태에서 분리
             if ":" in key:
                 doc_type, field = key.split(":", 1)
-                
+
                 if "소득" in doc_type or "income" in doc_type.lower():
                     income_items[field] = value
                 elif "지출" in doc_type or "expense" in doc_type.lower():
                     expense_items[field] = value
-        
+
         # AI로 각각 분석
         categorized_income = self._categorize_income(income_items) if income_items else {}
         categorized_expense = self._categorize_expense(expense_items) if expense_items else {}
-        
+
         # 종합 분석 및 추천
         recommendations = self._generate_recommendations(categorized_income, categorized_expense)
-        
+
         return {
             "income": categorized_income,
             "expense": categorized_expense,
             "recommendations": recommendations,
             "summary": self._generate_summary(categorized_income, categorized_expense)
         }
-    
+
+    @log_util.logging_decorator
     def _categorize_income(self, income_items: Dict[str, str]) -> Dict[str, Any]:
         """소득을 카테고리별로 분류"""
         if not income_items:
             return {}
-            
+
         prompt = f"""
 다음 소득 항목들을 분석하여 아래 카테고리로 정확하게 분류해줘:
 
@@ -154,7 +160,7 @@ class FinancialAnalyzerService:
 
 중요: 위 형식을 정확히 따라야 합니다. JSON 코드블록(```)은 제외하고 순수 JSON만 반환하세요.
 """
-        
+
         try:
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -163,28 +169,26 @@ class FinancialAnalyzerService:
                 temperature=0,
                 seed=12345
             )
-            
+
             result_text = response.choices[0].message.content.strip()
-            print(f"[DEBUG] AI Response (income): {result_text[:500]}")  # 처음 500자만 로그
-            
+
             # JSON 추출
             if "```json" in result_text:
                 result_text = result_text.split("```json")[1].split("```")[0].strip()
             elif "```" in result_text:
                 result_text = result_text.split("```")[1].split("```")[0].strip()
-            
+
             # JSON 수정 (잘못된 문법 자동 수정)
             result_text = self._fix_json_string(result_text)
-            print(f"[DEBUG] Fixed JSON: {result_text[:500]}")
-            
+
             # JSON 파싱 시도
             try:
                 result = json.loads(result_text)
                 # 언더스코어를 띄어쓰기로 변환
                 return self._clean_item_names(result)
             except json.JSONDecodeError as json_err:
-                print(f"[ERROR] JSON parsing failed: {json_err}")
-                print(f"[ERROR] Raw response text: {result_text}")
+                logger.error(f"[ERROR] JSON parsing failed: {json_err}")
+                logger.error(f"[ERROR] Raw response text: {result_text}")
                 # JSON 파싱 실패 시 원본 데이터 반환
                 return {
                     "error": f"AI 응답을 파싱할 수 없습니다: {str(json_err)}",
@@ -200,7 +204,7 @@ class FinancialAnalyzerService:
                     "총소득": sum(int(v) for v in income_items.values() if v.isdigit())
                 }
         except Exception as e:
-            print(f"[ERROR] Income categorization failed: {str(e)}")
+            logger.error(f"[ERROR] Income categorization failed: {str(e)}")
             return {
                 "error": str(e),
                 "raw_items": income_items,
@@ -215,11 +219,12 @@ class FinancialAnalyzerService:
                 "총소득": sum(int(v) for v in income_items.values() if v.isdigit())
             }
 
+    @log_util.logging_decorator
     def _categorize_expense(self, expense_items: Dict[str, str]) -> Dict[str, Any]:
         """지출을 카테고리별로 분류"""
         if not expense_items:
             return {}
-            
+
         prompt = f"""
 다음 지출 항목들을 분석하여 아래 카테고리로 정확하게 분류해줘:
 
@@ -295,7 +300,7 @@ class FinancialAnalyzerService:
 
 중요: 위 형식을 정확히 따라야 합니다. JSON 코드블록(```)은 제외하고 순수 JSON만 반환하세요.
 """
-        
+
         try:
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -304,28 +309,26 @@ class FinancialAnalyzerService:
                 temperature=0,
                 seed=12345
             )
-            
+
             result_text = response.choices[0].message.content.strip()
-            print(f"[DEBUG] AI Response (expense): {result_text[:500]}")  # 처음 500자만 로그
-            
+
             # JSON 추출
             if "```json" in result_text:
                 result_text = result_text.split("```json")[1].split("```")[0].strip()
             elif "```" in result_text:
                 result_text = result_text.split("```")[1].split("```")[0].strip()
-            
+
             # JSON 수정 (잘못된 문법 자동 수정)
             result_text = self._fix_json_string(result_text)
-            print(f"[DEBUG] Fixed JSON: {result_text[:500]}")
-            
+
             # JSON 파싱 시도
             try:
                 result = json.loads(result_text)
                 # 언더스코어를 띄어쓰기로 변환
                 return self._clean_item_names(result)
             except json.JSONDecodeError as json_err:
-                print(f"[ERROR] JSON parsing failed: {json_err}")
-                print(f"[ERROR] Raw response text: {result_text}")
+                logger.error(f"[ERROR] JSON parsing failed: {json_err}")
+                logger.error(f"[ERROR] Raw response text: {result_text}")
                 # JSON 파싱 실패 시 원본 데이터 반환
                 return {
                     "error": f"AI 응답을 파싱할 수 없습니다: {str(json_err)}",
@@ -343,7 +346,7 @@ class FinancialAnalyzerService:
                     "총지출": sum(int(v) for v in expense_items.values() if v.isdigit())
                 }
         except Exception as e:
-            print(f"[ERROR] Expense categorization failed: {str(e)}")
+            logger.error(f"[ERROR] Expense categorization failed: {str(e)}")
             return {
                 "error": str(e),
                 "raw_items": expense_items,
@@ -360,22 +363,23 @@ class FinancialAnalyzerService:
                 "총지출": sum(int(v) for v in expense_items.values() if v.isdigit())
             }
 
+    @log_util.logging_decorator
     def _generate_recommendations(self, income_data: Dict, expense_data: Dict) -> Dict[str, Any]:
         """소득/지출 데이터를 기반으로 자산 분배 추천"""
         if not income_data or not expense_data:
             return {"message": "소득 또는 지출 데이터가 부족합니다"}
-        
+
         # 안전한 타입 변환
         try:
             total_income = int(income_data.get("total_income", 0)) if income_data.get("total_income") else 0
         except (ValueError, TypeError):
             total_income = 0
-            
+
         try:
             total_expense = int(expense_data.get("total_expense", 0)) if expense_data.get("total_expense") else 0
         except (ValueError, TypeError):
             total_expense = 0
-        
+
         prompt = f"""
 당신은 전문 재무설계사입니다. 다음 데이터를 분석하여 자산 분배를 추천해주세요.
 
@@ -437,7 +441,7 @@ class FinancialAnalyzerService:
   }}
 }}
 """
-        
+
         try:
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -446,34 +450,37 @@ class FinancialAnalyzerService:
                 temperature=0,  # 일관성을 위해 0으로 변경
                 seed=12345  # 동일한 입력에 대해 일관된 결과 보장
             )
-            
+
             result_text = response.choices[0].message.content.strip()
             if "```json" in result_text:
                 result_text = result_text.split("```json")[1].split("```")[0].strip()
             elif "```" in result_text:
                 result_text = result_text.split("```")[1].split("```")[0].strip()
-                
+
             return json.loads(result_text)
         except Exception as e:
-            print(f"[ERROR] Recommendation generation failed: {str(e)}")
+            logger.error(f"[ERROR] Recommendation generation failed: {str(e)}")
             return {"error": str(e)}
-    
+
+    @log_util.logging_decorator
     def _generate_summary(self, income_data: Dict, expense_data: Dict) -> Dict[str, Any]:
         """전체 재무 상황 요약"""
         # 안전한 타입 변환 - 한글 키 우선, 없으면 영문 키
         try:
-            total_income = int(income_data.get("총소득") or income_data.get("total_income", 0)) if (income_data.get("총소득") or income_data.get("total_income")) else 0
+            total_income = int(income_data.get("총소득") or income_data.get("total_income", 0)) if (
+                        income_data.get("총소득") or income_data.get("total_income")) else 0
         except (ValueError, TypeError):
             total_income = 0
-            
+
         try:
-            total_expense = int(expense_data.get("총지출") or expense_data.get("total_expense", 0)) if (expense_data.get("총지출") or expense_data.get("total_expense")) else 0
+            total_expense = int(expense_data.get("총지출") or expense_data.get("total_expense", 0)) if (
+                        expense_data.get("총지출") or expense_data.get("total_expense")) else 0
         except (ValueError, TypeError):
             total_expense = 0
-        
+
         surplus = total_income - total_expense
         surplus_ratio = (surplus / total_income * 100) if total_income > 0 else 0
-        
+
         return {
             "total_income": total_income,
             "total_expense": total_expense,
