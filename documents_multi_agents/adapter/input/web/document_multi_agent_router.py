@@ -167,11 +167,27 @@ async def analyze_document(
         
         # 추출된 항목들을 저장하고 동시에 수집
         extracted_items = {}
+        duplicate_keywords = ["총급여", "총소득", "합계", "총합", "총액"]  # 중복 가능성 있는 키워드
+        
         try:
             for match in matches:
                 field, value = match.groups()
                 field_clean = field.strip()
                 value_clean = value.replace(",", "").strip()
+                
+                # 중복 체크: 같은 금액의 유사 항목이 이미 있으면 스킵
+                is_duplicate = False
+                for existing_field, existing_value in extracted_items.items():
+                    if value_clean == existing_value:  # 금액이 같고
+                        # 하나가 다른 하나의 "합계" 버전이면 중복으로 간주
+                        if any(keyword in field_clean for keyword in duplicate_keywords) or \
+                           any(keyword in existing_field for keyword in duplicate_keywords):
+                            is_duplicate = True
+                            print(f"[DEBUG] Skipping duplicate: {field_clean} (same as {existing_field}: {value_clean})")
+                            break
+                
+                if is_duplicate:
+                    continue
                 
                 # 암호화된 키/값 생성
                 encrypted_key = crypto.enc_data(f"{type_of_doc}:{field_clean}")
