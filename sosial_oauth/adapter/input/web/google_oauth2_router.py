@@ -1,12 +1,13 @@
 import uuid
 import httpx
 
-from fastapi import APIRouter, Request, Cookie
+from fastapi import APIRouter, Request, Cookie, Header
 from fastapi.responses import RedirectResponse, JSONResponse
 
 from config.redis_config import get_redis
 from sosial_oauth.application.usecase.google_oauth2_usecase import GoogleOAuth2UseCase
 from sosial_oauth.infrastructure.service.google_oauth2_service import GoogleOAuth2Service
+from utils.crsf import generate_csrf_token, verify_csrf_token, CSRF_COOKIE_NAME
 
 # Singleton 방식으로 변경
 authentication_router = APIRouter()
@@ -20,10 +21,14 @@ async def redirect_to_google():
     return RedirectResponse(url)
 
 @authentication_router.post("/logout")
-async def logout_to_google(request: Request, session_id: str | None = Cookie(None)):
+async def logout_to_google(request: Request, session_id: str | None = Cookie(None), x_csrf_token: str | None = Header(None)):
+
     print("[DEBUG] Logout called")
 
     print("[DEBUG] Request headers:", request.headers)
+
+    # CSRF 검증
+    verify_csrf_token(request, x_csrf_token)
 
     if not session_id:
         print("[DEBUG] No session_id received. Returning logged_in: False")
@@ -79,17 +84,34 @@ async def process_google_redirect(
     redis_client.expire(session_id, 24 * 60 * 60)
     print("[DEBUG] Session saved in Redis:", redis_client.exists(session_id))
 
+    # CSRF 토큰 생성
+    csrf_token = generate_csrf_token()
+    print("[DEBUG] csrf_token:", csrf_token)
+
     # 브라우저 쿠키 발급
     response = RedirectResponse("http://localhost:3000")
     response.set_cookie(
         key="session_id",
         value=session_id,
         httponly=True,
-        secure=False,
+        secure=False,           #배포 시 (https이용 시) True로 변경
+        samesite="lax",         #배포 시 strict로 변경 (CSRF 대응)
         max_age=3600
     )
+
+    # CSRF 토큰 쿠키 발급
+    response.set_cookie(
+        key=CSRF_COOKIE_NAME,
+        value=csrf_token,
+        httponly=False,  # JS에서 읽어서 헤더에 넣을 수 있도록 False
+        secure=True,
+        samesite="strict",
+        max_age=3600
+    )
+
     print("[DEBUG] Cookie set in RedirectResponse directly")
     return response
+
 
 
 @authentication_router.get("/status")

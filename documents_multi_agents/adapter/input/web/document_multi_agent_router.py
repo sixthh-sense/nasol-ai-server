@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, HTTPException, Form, Response
+from fastapi import APIRouter, Depends, UploadFile, HTTPException, Form, Response, Header
 from openai import OpenAI
 from pypdf import PdfReader
 import asyncio
@@ -13,11 +13,13 @@ from config.crypto import Crypto
 from config.redis_config import get_redis
 from account.adapter.input.web.session_helper import get_current_user
 from account.adapter.input.web.request.insert_income_request import InsertIncomeRequest
+from utils.crsf import  verify_csrf_token
 
 documents_multi_agents_router = APIRouter(tags=["documents_multi_agents_router"])
 redis_client = get_redis()
 client = OpenAI()
 crypto = Crypto.get_instance()
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 # -----------------------
 # PDF 텍스트 추출
@@ -133,11 +135,18 @@ async def tax_on_document(document: str, question: str) -> str:
 # API 엔드포인트
 # -----------------------
 @documents_multi_agents_router.post("/analyze")
-async def analyze_document(file: UploadFile, type_of_doc: str = Form(...), session_id: str = Depends(get_current_user)):
+async def analyze_document(file: UploadFile, type_of_doc: str = Form(...), session_id: str = Depends(get_current_user),x_csrf_token: str | None = Header(None)):
+    # CSRF 검증
+    verify_csrf_token(x_csrf_token)
+
     try:
         content = await file.read()
+
         if not content:
             raise HTTPException(400, "Empty file upload")
+
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(413, "File too large")
 
         text = extract_text_from_pdf_clean(content)
         if not text:
