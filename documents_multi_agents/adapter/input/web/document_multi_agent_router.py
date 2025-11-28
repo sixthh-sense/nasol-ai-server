@@ -265,6 +265,7 @@ async def analyze_document(
 
 # -----------------------
 # API 엔드포인트
+# 미래 자산 예측
 # -----------------------
 @documents_multi_agents_router.get("/future-assets")
 @log_util.logging_decorator
@@ -300,6 +301,12 @@ async def analyze_document(session_id: str = Depends(get_current_user)):
                                       "-- 등으로 불필요한 줄나눔은 없게 하라."
                                       )
 
+        # AI 응답 전처리: 마크다운, 설명문 제거
+        answer = answer.replace("**", "")  # 볼드 제거
+        answer = answer.replace("*", "")   # 이탤릭 제거
+        answer = re.sub(r'※.*', '', answer)  # 주석 제거
+        answer = re.sub(r'---.*', '', answer, flags=re.DOTALL)  # 구분선 이후 제거
+
         return answer
     except Exception as e:
         raise HTTPException(500, f"{type(e).__name__}: {str(e)}")
@@ -307,6 +314,7 @@ async def analyze_document(session_id: str = Depends(get_current_user)):
 
 # -----------------------
 # API 엔드포인트
+# 세액 공제 확인
 # -----------------------
 @documents_multi_agents_router.get("/tax-credit")
 @log_util.logging_decorator
@@ -359,6 +367,12 @@ async def analyze_document(session_id: str = Depends(get_current_user)):
                                       "-- 등으로 불필요한 줄나눔은 없게 하라."
                                       )
 
+        # AI 응답 전처리: 마크다운, 설명문 제거
+        answer = answer.replace("**", "")  # 볼드 제거
+        answer = answer.replace("*", "")   # 이탤릭 제거
+        answer = re.sub(r'※.*', '', answer)  # 주석 제거
+        answer = re.sub(r'---.*', '', answer, flags=re.DOTALL)  # 구분선 이후 제거
+
         return answer
     except Exception as e:
         raise HTTPException(500, f"{type(e).__name__}: {str(e)}")
@@ -366,6 +380,7 @@ async def analyze_document(session_id: str = Depends(get_current_user)):
 
 # -----------------------
 # API 엔드포인트
+# 연말정산 공제 내역 확인
 # -----------------------
 @documents_multi_agents_router.get("/deduction-expectation")
 @log_util.logging_decorator
@@ -401,10 +416,110 @@ async def analyze_document(session_id: str = Depends(get_current_user)):
                                       "-- 등으로 불필요한 줄나눔은 없게 하라."
                                       )
 
+        # AI 응답 전처리: 마크다운, 설명문 제거
+        answer = answer.replace("**", "")  # 볼드 제거
+        answer = answer.replace("*", "")   # 이탤릭 제거
+        answer = re.sub(r'※.*', '', answer)  # 주석 제거
+        answer = re.sub(r'---.*', '', answer, flags=re.DOTALL)  # 구분선 이후 제거
+
         return answer
     except Exception as e:
         raise HTTPException(500, f"{type(e).__name__}: {str(e)}")
 
+
+# -----------------------
+# API 엔드포인트
+# 목표 금액 재무 가이드
+# -----------------------
+@documents_multi_agents_router.get("/deduction-expectation")
+@log_util.logging_decorator
+async def analyze_document(session_id: str = Depends(get_current_user)):
+    try:
+        content = redis_client.hgetall(session_id)
+        pairs = []
+        for k_bytes, v_bytes in content.items():
+            try:
+                if k_bytes == "USER_TOKEN":
+                    continue
+
+                key_plain = crypto.dec_data(k_bytes)
+                val_plain = crypto.dec_data(v_bytes)
+
+                # key_plain은 "type:field" 형태 — 원하는 대로 처리
+                _, field_name = key_plain.split(':', 1)
+                pairs.append(f"{field_name}: {val_plain}")
+
+            except ValueError as e:
+                # 복호화 실패 시 로깅/무시
+                continue
+
+        data_str = ", ".join(pairs)
+
+        answer = await qa_on_document(data_str,
+                                      "주어진 문서 본문을 활용하여 연말정산에서 받을 수 있는 총 공제 예상 금액을 산출해줘. "
+                                      "이 때 내가 받을 수 있는 총 공제 예상 금액을 먼저 산출해서 보여주고, "
+                                      "앞으로 받을 수 있는 추가적인 공제내역이 있다면 해당 항목에 대한 간결한 설명과 함께 알려줘."
+                                      "참고할 사이트는 https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?mi=6596&cntntsId=7875 국세청 공식 사이트야",
+                                      "주어진 문서 본문의 자료를 토대로 질문에 답변하라."
+                                      "추가적인 질문을 요구하는 문장은 제외하라."
+                                      "-- 등으로 불필요한 줄나눔은 없게 하라."
+                                      "답변 앞 뒤로 쌍따움표 같은 것을 붙이지 마라."
+                                      )
+
+        # AI 응답 전처리: 마크다운, 설명문 제거
+        answer = answer.replace("**", "")  # 볼드 제거
+        answer = answer.replace("*", "")  # 이탤릭 제거
+        answer = re.sub(r'※.*', '', answer)  # 주석 제거
+        answer = re.sub(r'---.*', '', answer, flags=re.DOTALL)  # 구분선 이후 제거
+
+        return answer
+    except Exception as e:
+        raise HTTPException(500, f"{type(e).__name__}: {str(e)}")
+
+@documents_multi_agents_router.get("/financial-guide")
+@log_util.logging_decorator
+async def analyze_document(now_mon: int, tar_mon: int, session_id: str = Depends(get_current_user)):
+    try:
+        content = redis_client.hgetall(session_id)
+        pairs = []
+        for k_bytes, v_bytes in content.items():
+            try:
+                if k_bytes == "USER_TOKEN":
+                    continue
+
+                key_plain = crypto.dec_data(k_bytes)
+                val_plain = crypto.dec_data(v_bytes)
+
+                # key_plain은 "type:field" 형태 — 원하는 대로 처리
+                _, field_name = key_plain.split(':', 1)
+                pairs.append(f"{field_name}: {val_plain}")
+
+            except ValueError as e:
+                # 복호화 실패 시 로깅/무시
+                continue
+
+        data_str = ", ".join(pairs)
+
+        answer = await qa_on_document(data_str,
+                                      f"주어진 문서 본문을 활용하여 현재 내 자산이 {now_mon}이고, "
+                                      f"내가 목표로 하는 금액이 {tar_mon}일 때"
+                                      "현재 자산이 목표 금액을 달성하기 위해 할 수 있는 방법을 분석 해줘. "
+                                      "이 때 목표를 단기, 중기, 장기 목표로 나누고 "
+                                      "각 목표를 달성하기 위한 방법으로 리스크가 없는 방법, 리스크가 있는 방법, 리스크가 큰 방법으로 나눠서 설명해줘. ",
+                                      "주어진 문서 본문의 자료를 토대로 질문에 답변하라."
+                                      "추가적인 질문을 요구하는 문장은 제외하라."
+                                      "-- 등으로 불필요한 줄나눔은 없게 하라."
+                                      )
+
+        # AI 응답 전처리: 마크다운, 설명문 제거
+        answer = answer.replace("**", "")  # 볼드 제거
+        answer = answer.replace("*", "")  # 이탤릭 제거
+        answer = re.sub(r'※.*', '', answer)  # 주석 제거
+        answer = re.sub(r'---.*', '', answer, flags=re.DOTALL)  # 구분선 이후 제거
+
+        return answer
+    except Exception as e:
+        raise HTTPException(500, f"{type(e).__name__}: {str(e)}")
 
 # -----------------------
 # API 엔드포인트 - 사용자 입력 폼 데이터
