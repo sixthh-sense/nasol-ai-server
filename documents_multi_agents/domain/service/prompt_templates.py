@@ -184,7 +184,7 @@ class PromptTemplates:
             "\n"
             "6. 추가 공제: \n"
             "   <hr style='border: 1px solid #ccc; margin: 20px 0;'> \n"
-            "<span>✅</span><span style='font-size: 1.5em; font-weight: bold;'>추가 공제 가능 항목</span> \n"
+            "<span>✅ </span><span style='font-size: 1.5em; font-weight: bold;'>추가 공제 가능 항목</span> \n"
             "\n"
             "7. 참고: <p style='color: #666; font-size: 0.95em;'>※ 자세한 내용은 국세청 홈택스에서 확인하실 수 있습니다.</p> \n"
             "\n"

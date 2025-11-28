@@ -1,11 +1,14 @@
 import os
 import json
 import re
+import hashlib
+import os
 from typing import Dict, Any
 from openai import OpenAI
 from dotenv import load_dotenv
 
 from util.log.log import Log
+from util.cache.ai_cache import AICache
 
 load_dotenv()
 logger = Log.get_logger()
@@ -106,6 +109,18 @@ class FinancialAnalyzerService:
         if not income_items:
             return {}
 
+        # 🔥 캐시 키 생성 (데이터 기반)
+        data_str = json.dumps(income_items, ensure_ascii=False, sort_keys=True)
+        cache_key = AICache.generate_cache_key(data_str, "categorize-income")
+        
+        # 🔥 캐시 확인
+        cached_response = AICache.get_cached_response(cache_key)
+        if cached_response:
+            try:
+                return json.loads(cached_response)
+            except json.JSONDecodeError:
+                logger.warning("[CACHE] Failed to parse cached income data, re-analyzing")
+
         prompt = f"""
 다음 소득 항목들을 분석하여 아래 카테고리로 정확하게 분류해줘:
 
@@ -185,7 +200,12 @@ class FinancialAnalyzerService:
             try:
                 result = json.loads(result_text)
                 # 언더스코어를 띄어쓰기로 변환
-                return self._clean_item_names(result)
+                cleaned_result = self._clean_item_names(result)
+                
+                # 🔥 캐시 저장 (24시간)
+                AICache.set_cached_response(cache_key, json.dumps(cleaned_result, ensure_ascii=False), ttl=86400)
+                
+                return cleaned_result
             except json.JSONDecodeError as json_err:
                 logger.error(f"[ERROR] JSON parsing failed: {json_err}")
                 logger.error(f"[ERROR] Raw response text: {result_text}")
@@ -224,6 +244,18 @@ class FinancialAnalyzerService:
         """지출을 카테고리별로 분류"""
         if not expense_items:
             return {}
+
+        # 🔥 캐시 키 생성 (데이터 기반)
+        data_str = json.dumps(expense_items, ensure_ascii=False, sort_keys=True)
+        cache_key = AICache.generate_cache_key(data_str, "categorize-expense")
+        
+        # 🔥 캐시 확인
+        cached_response = AICache.get_cached_response(cache_key)
+        if cached_response:
+            try:
+                return json.loads(cached_response)
+            except json.JSONDecodeError:
+                logger.warning("[CACHE] Failed to parse cached expense data, re-analyzing")
 
         prompt = f"""
 다음 지출 항목들을 분석하여 아래 카테고리로 정확하게 분류해줘:
@@ -325,7 +357,12 @@ class FinancialAnalyzerService:
             try:
                 result = json.loads(result_text)
                 # 언더스코어를 띄어쓰기로 변환
-                return self._clean_item_names(result)
+                cleaned_result = self._clean_item_names(result)
+                
+                # 🔥 캐시 저장 (24시간)
+                AICache.set_cached_response(cache_key, json.dumps(cleaned_result, ensure_ascii=False), ttl=86400)
+                
+                return cleaned_result
             except json.JSONDecodeError as json_err:
                 logger.error(f"[ERROR] JSON parsing failed: {json_err}")
                 logger.error(f"[ERROR] Raw response text: {result_text}")

@@ -683,10 +683,11 @@ async def get_combined_result(session_id: str = Depends(get_current_user)):
         # Redis에서 모든 데이터 가져오기
         encrypted_data = redis_client.hgetall(session_id)
 
-        if not encrypted_data:
+        # 🔥 버그 수정: USER_TOKEN만 있는 경우도 빈 데이터로 간주
+        if not encrypted_data or len(encrypted_data) <= 1:
             raise HTTPException(
                 status_code=404,
-                detail="저장된 재무 데이터가 없습니다"
+                detail="저장된 재무 데이터가 없습니다. 문서를 먼저 업로드해주세요."
             )
 
         # 복호화 및 소득/지출 분리
