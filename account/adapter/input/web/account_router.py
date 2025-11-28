@@ -93,8 +93,8 @@ def get_account_by_session_id(session_id: str = Depends(get_current_user)):
 def delete_session_by_session_id(session_id: str = Depends(get_current_user)):
 
     delete_result = redis_client.delete(session_id)
-    logger.debug("Redis delete result:", delete_result)
-    logger.debug("Redis session exists after delete?", redis_client.exists(session_id))
+    logger.debug("Redis delete result: %s", delete_result)
+    logger.debug("Redis session exists after delete? %s", redis_client.exists(session_id))
 
     # 쿠키 삭제와 함께 응답 반환
     response = JSONResponse({"success": True, "message": "Account deleted successfully"})
