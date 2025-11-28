@@ -91,7 +91,7 @@ def get_account_by_session_id(session_id: str = Depends(get_current_user)):
 
 @account_router.delete("/session_out")
 def delete_session_by_session_id(session_id: str = Depends(get_current_user)):
-    session_id = "bc4e533a-4279-4b93-9e51-81abcc11cb4e"
+
     delete_result = redis_client.delete(session_id)
     logger.debug("Redis delete result:", delete_result)
     logger.debug("Redis session exists after delete?", redis_client.exists(session_id))
@@ -105,7 +105,7 @@ def delete_session_by_session_id(session_id: str = Depends(get_current_user)):
 @account_router.post("/departure")
 async def departure(request: Request, session_id: str | None = Cookie(None)):
     logger.debug("Departure called")
-    logger.debug("Request headers:", request.headers)
+    logger.debug("Request headers: %s", request.headers)
 
     if not session_id:
         logger.debug("No session_id received. Returning error")
@@ -115,7 +115,7 @@ async def departure(request: Request, session_id: str | None = Cookie(None)):
 
     # Redis 세션 확인
     exists = redis_client.exists(session_id)
-    logger.debug("Redis session exists:", exists)
+    logger.debug("Redis session exists: %s", exists)
 
     if not exists:
         logger.debug("Session not found in Redis")
@@ -128,7 +128,7 @@ async def departure(request: Request, session_id: str | None = Cookie(None)):
     logger.debug("Account found")
 
     if not account:
-        logger.debug("Account not found for session_id:", session_id)
+        logger.debug("Account not found for session_id: %s", session_id)
         # 계정이 없어도 세션과 쿠키는 삭제
         redis_client.delete(session_id)
         response = JSONResponse({"success": False, "message": "Account not found"}, status_code=404)
@@ -172,12 +172,12 @@ async def departure(request: Request, session_id: str | None = Cookie(None)):
 
     # 계정 삭제 (향후 table이 account 외에 더 늘어날 경우 이쪽에 테이블 삭제 로직 추가)
     deleted = usecase.delete_account_by_oauth_id(account.oauth_type, account.oauth_id)
-    logger.debug("Account deleted:", deleted)
+    logger.debug("Account deleted: %s", deleted)
 
     # Redis 세션 삭제
     delete_result = redis_client.delete(session_id)
-    logger.debug("Redis delete result:", delete_result)
-    logger.debug("Redis session exists after delete?", redis_client.exists(session_id))
+    logger.debug("Redis delete result: %s", delete_result)
+    logger.debug("Redis session exists after delete? %s", redis_client.exists(session_id))
     # 쿠키 삭제와 함께 응답 반환
     response = JSONResponse({"success": True, "message": "Account deleted successfully"})
     response.delete_cookie(key="session_id")
