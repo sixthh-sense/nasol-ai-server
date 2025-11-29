@@ -855,6 +855,14 @@ async def tax_credit_checklist_markdown(session_id: str = Depends(get_current_us
 
         data_str = ", ".join(pairs)
 
+        # 🔥 캐시 확인
+        cache_key = AICache.generate_cache_key(data_str, "tax-credit-checklist")
+        cached_response = AICache.get_cached_response(cache_key)
+
+        if cached_response:
+            return cached_response
+
+        # 캐시 미스 - GPT 호출
         tax_items_text = """
 1. 자녀 세액공제
 2. 연금계좌 세액공제
@@ -935,6 +943,9 @@ async def tax_credit_checklist_markdown(session_id: str = Depends(get_current_us
             question,
             "출력은 반드시 “설명 섹션 + 마크다운 표” 형태로만 작성하라."
         )
+
+        # 🔥 캐시 저장 (24시간)
+        AICache.set_cached_response(cache_key, answer, ttl=86400)
 
         return answer
 
