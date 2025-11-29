@@ -91,8 +91,12 @@ async def analyze_document(
         session_id: str = Depends(get_current_user),
         x_csrf_token:  str | None = Header(None)
 ):
-    # CSRF 검증
-    verify_csrf_token(request, x_csrf_token)
+    # 🔥 비회원(GUEST) 여부 확인
+    user_token = redis_client.hget(session_id, "USER_TOKEN")
+    is_guest = (user_token == b"GUEST" or user_token == "GUEST") if user_token else True
+    
+    # CSRF 검증 (비회원은 선택적)
+    verify_csrf_token(request, x_csrf_token, required=not is_guest)
 
     try:
         # 쿠키에 session_id 명시적으로 설정
@@ -534,10 +538,19 @@ async def analyze_document(now_mon: int, tar_mon: int, session_id: str = Depends
 @documents_multi_agents_router.post("/analyze_form")
 @log_util.logging_decorator
 async def insert_document(
+        http_request: Request,
         response: Response,
         request: InsertDocumentRequest,
-        session_id: str = Depends(get_current_user)
+        session_id: str = Depends(get_current_user),
+        x_csrf_token: str | None = Header(None)
 ):
+    # 🔥 비회원(GUEST) 여부 확인
+    user_token = redis_client.hget(session_id, "USER_TOKEN")
+    is_guest = (user_token == b"GUEST" or user_token == "GUEST") if user_token else True
+    
+    # CSRF 검증 (비회원은 선택적)
+    verify_csrf_token(http_request, x_csrf_token, required=not is_guest)
+    
     session_expire_seconds = 24 * 60 * 60
 
     try:
